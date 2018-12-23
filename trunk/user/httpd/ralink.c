@@ -1419,6 +1419,19 @@ ej_wl_auth_list(int eid, webs_t wp, int argc, char **argv)
 	return ret;
 }
 
+static char const *skip_to_site_line(char const *p, size_t len)
+{
+  char const *curp = p;
+  char const *endp = p + len;
+  while ((curp + 1) < endp)
+  {
+    if (curp[0] == '\x0a' && (isdigit(curp[1]) || curp[1] == '\x0'))
+      break;
+    curp++;
+  }
+
+  return curp; //points to \n after return
+}
 
 #define SSURV_LINE_LEN		(4+33+20+23+9+7+7+3)		// Channel+SSID+Bssid+Security+Signal+WiressMode+ExtCh+NetworkType
 #define SSURV_LINE_LEN_WPS	(4+33+20+23+9+7+7+3+4+5)	// Channel+SSID+Bssid+Security+Signal+WiressMode+ExtCh+NetworkType+WPS+PIN
@@ -1431,10 +1444,11 @@ ej_wl_scan_5g(int eid, webs_t wp, int argc, char **argv)
 	int apCount = 0;
 	char data[8192];
 	char ssid_str[128];
+	//to have plenty of memory not resorting to malloc
 #if defined(USE_WSC_WPS)
-	char site_line[SSURV_LINE_LEN_WPS+1];
+	char site_line[2 * SSURV_LINE_LEN_WPS+1];
 #else
-	char site_line[SSURV_LINE_LEN+1];
+	char site_line[2 * SSURV_LINE_LEN+1];
 #endif
 	char site_chnl[4];
 	char site_ssid[34];
@@ -1481,11 +1495,13 @@ ej_wl_scan_5g(int eid, webs_t wp, int argc, char **argv)
 	retval += websWrite(wp, "[");
 	if (wrq.u.data.length > 0)
 	{
-		op = sp = wrq.u.data.pointer+line_len+2; // skip \n+\n
+		line_len = skip_to_site_line((char const *)wrq.u.data.pointer, wrq.u.data.length) - (char const *)wrq.u.data.pointer;
+		op = sp = wrq.u.data.pointer + line_len + 1; // skip last \n
 		len = strlen(op);
 		
 		while (*sp && ((len - (sp-op)) >= 0))
 		{
+			line_len = skip_to_site_line(sp, len - (sp - op)) - sp;// find out real line_len
 			memcpy(site_line, sp, line_len);
 			
 			memcpy(site_chnl, sp, 3);
